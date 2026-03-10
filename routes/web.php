@@ -27,4 +27,18 @@ Route::get('/test-interactive-menu', function (Request $request, InteractiveMenu
     return response()->json(['status' => 'sent'], 200);
 });
 
+Route::post('/test-interactive-menu', function (Request $request) {
+    info('test-interactive-menu   --- IGNORE ---');
+    info('Received interactive response: ' . $request->getContent());
+    return response()->json(['status' => 'sent'], 200);
+});
+
+Route::post('/test-interactive-menu', function (Request $request) {
+
+    info('test-interactive-menu   --- IGNORE ---');
+    info('Received interactive response: ' . $request->getContent());
+
+    return response()->json(['status' => 'sent'], 200);
+});
+
 // Removed Chatwoot form test: interactive lists are now sent directly to WhatsApp.
