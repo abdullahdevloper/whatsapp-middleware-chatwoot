@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class StoreApiService
@@ -47,6 +48,52 @@ class StoreApiService
             }
         }
 
+        
         return implode("\n", $lines);
+    }
+
+    public function normalizeProducts(array $products, int $limit = 10): array
+    {
+        $normalized = [];
+
+        
+        foreach ($products as $product) {
+            if (count($normalized) >= $limit) {
+                break;
+            }
+
+            $name = $product['name'] ?? null;
+            if ($name === null) {
+                continue;
+            }
+            $id = $product['id'] ?? null;
+            if ($id === null) {
+                $id = substr(sha1((string) $name), 0, 12);
+            }
+
+            $normalized[] = [
+                'id' => (string) $id,
+                'name' => (string) $name,
+                'price' => $product['price'] ?? null,
+                'currency' => $product['currency'] ?? null,
+                'description' => $this->cleanDescription($product['description'] ?? null),
+                'image_url' => $product['image_url'] ?? null,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    private function cleanDescription(?string $description): ?string
+    {
+        if ($description === null || $description === '') {
+            return null;
+        }
+
+        $decoded = html_entity_decode($description, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $stripped = strip_tags($decoded);
+        $collapsed = preg_replace('/\s+/', ' ', $stripped);
+
+        return $collapsed !== null ? Str::of($collapsed)->trim()->limit(900, '...')->toString() : null;
     }
 }

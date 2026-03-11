@@ -83,4 +83,79 @@ class WhatsAppService
             'phone_number_id' => $phoneNumberId,
         ]);
     }
+
+    public function sendInteractiveButtons(
+        string $phoneNumberId,
+        string $phoneNumber,
+        string $body,
+        array $buttons
+    ): void {
+        $token = env('WHATSAPP_ACCESS_TOKEN');
+
+        if (empty($token) || empty($phoneNumberId)) {
+            throw new RuntimeException('WHATSAPP_ACCESS_TOKEN or phone_number_id is not configured.');
+        }
+
+        $url = "https://graph.facebook.com/v19.0/{$phoneNumberId}/messages";
+
+        $payload = [
+            'messaging_product' => 'whatsapp',
+            'to' => $phoneNumber,
+            'type' => 'interactive',
+            'interactive' => [
+                'type' => 'button',
+                'body' => [
+                    'text' => $body,
+                ],
+                'action' => [
+                    'buttons' => $buttons,
+                ],
+            ],
+        ];
+
+        Http::withHeaders([
+            'Authorization' => "Bearer {$token}",
+            'Content-Type' => 'application/json',
+        ])->post($url, $payload)->throw();
+
+        Log::info('whatsapp_buttons_sent', [
+            'phone_number' => $phoneNumber,
+            'phone_number_id' => $phoneNumberId,
+        ]);
+    }
+
+    public function sendImage(
+        string $phoneNumberId,
+        string $phoneNumber,
+        string $imageUrl,
+        ?string $caption = null
+    ): void {
+        $token = env('WHATSAPP_ACCESS_TOKEN');
+
+        if (empty($token) || empty($phoneNumberId)) {
+            throw new RuntimeException('WHATSAPP_ACCESS_TOKEN or phone_number_id is not configured.');
+        }
+
+        $url = "https://graph.facebook.com/v19.0/{$phoneNumberId}/messages";
+
+        $payload = [
+            'messaging_product' => 'whatsapp',
+            'to' => $phoneNumber,
+            'type' => 'image',
+            'image' => array_filter([
+                'link' => $imageUrl,
+                'caption' => $caption,
+            ], fn ($v) => $v !== null && $v !== ''),
+        ];
+
+        Http::withHeaders([
+            'Authorization' => "Bearer {$token}",
+            'Content-Type' => 'application/json',
+        ])->post($url, $payload)->throw();
+
+        Log::info('whatsapp_image_sent', [
+            'phone_number' => $phoneNumber,
+            'phone_number_id' => $phoneNumberId,
+        ]);
+    }
 }

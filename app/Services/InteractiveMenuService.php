@@ -31,6 +31,99 @@ class InteractiveMenuService
         $this->whatsApp->sendText($phoneNumberId, $phoneNumber, $text);
     }
 
+    public function sendProductListMenu(
+        string $phoneNumberId,
+        string $phoneNumber,
+        string $title,
+        array $products
+    ): void {
+        $rows = [];
+
+        foreach ($products as $product) {
+            $name = (string) ($product['name'] ?? '');
+            if ($name === '') {
+                continue;
+            }
+            $price = $product['price'] ?? null;
+            $currency = $product['currency'] ?? null;
+            $description = $price !== null ? trim($price . ' ' . $currency) : '';
+            $rows[] = [
+                'id' => 'product:' . $product['id'],
+                'title' => mb_substr($name, 0, 24),
+                'description' => $description !== '' ? mb_substr($description, 0, 72) : null,
+            ];
+        }
+
+        $rows = array_values(array_filter($rows, fn ($row) => !empty($row['title'])));
+
+        $payload = $this->buildMenuPayload(
+            mb_substr($title, 0, 24),
+            'اختر المنتج المطلوب',
+            'عرض المنتجات',
+            'المنتجات',
+            $rows
+        );
+
+        $this->sendPayload($phoneNumberId, $phoneNumber, $payload);
+    }
+
+    public function sendProductDetailsWithBuyButton(
+        string $phoneNumberId,
+        string $phoneNumber,
+        array $product
+    ): void {
+        $fallbackImageUrl = 'https://tybalatrak.com/public/haybat_al_salateen_bundle_offer.png';
+        $name = $product['name'] ?? '';
+        $description = $this->formatDescription($product['description'] ?? '');
+        $price = $product['price'] ?? '';
+        $currency = $product['currency'] ?? '';
+        $imageUrl = $fallbackImageUrl;
+
+        $priceLine = $price !== '' ? trim($price . ' ' . $currency) : null;
+        $bodyLines = array_filter([$name, $description, $priceLine]);
+        $details = implode("\n\n", $bodyLines);
+        if (!empty($imageUrl)) {
+            $caption = $priceLine !== null ? $name . "\n" . $priceLine : $name;
+            $this->whatsApp->sendImage($phoneNumberId, $phoneNumber, $imageUrl, $caption);
+        }
+        if ($details !== '') {
+            $this->sendTextMessage($phoneNumberId, $phoneNumber, $details);
+        }
+
+        $buttons = [
+            [
+                'type' => 'reply',
+                'reply' => [
+                    'id' => 'buy:' . ($product['id'] ?? ''),
+                    'title' => 'شراء المنتج',
+                ],
+            ],
+        ];
+
+        $this->whatsApp->sendInteractiveButtons($phoneNumberId, $phoneNumber, 'هل ترغب في شراء هذا المنتج؟', $buttons);
+    }
+
+    private function formatDescription(string $text): string
+    {
+        if ($text === '') {
+            return '';
+        }
+
+        $decoded = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $stripped = strip_tags($decoded);
+        $collapsed = preg_replace('/\s+/', ' ', $stripped);
+        if ($collapsed === null) {
+            return '';
+        }
+
+        $withBreaks = preg_replace('/\s*([،؛:])\s*/u', "$1\n", $collapsed);
+        $withBreaks = preg_replace('/\s*(\.)\s*/u', "$1\n", $withBreaks ?? $collapsed);
+        $withBreaks = preg_replace('/\s*-\s*/u', "\n- ", $withBreaks ?? $collapsed);
+
+        $result = trim($withBreaks ?? $collapsed);
+        return $result;
+    }
+
     public function buildInteractiveListPayload(): array
     {
         return [

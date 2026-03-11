@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class InteractiveRouter
 {
@@ -97,6 +98,8 @@ class InteractiveRouter
         'order_form' => "📝 نموذج الطلب\n\nيرجى إرسال البيانات التالية:\nالاسم الكامل\nرقم الهاتف\nالمحافظة\nالعنوان التفصيلي",
         'order_browse' => "🛍 تصفح المنتجات\n\nيمكنك تصفح المنتجات عبر القوائم التفاعلية في هذه المحادثة.",
     ];
+    private const PRODUCT_CACHE_TTL_SECONDS = 1800;
+    private const LAST_PRODUCT_TTL_SECONDS = 1800;
 
     public function __construct(
         private readonly InteractiveMenuService $menuService,
@@ -115,19 +118,28 @@ class InteractiveRouter
         if (in_array($routingId, self::PRODUCT_CATEGORIES, true)) {
             $categoryId = self::CATEGORY_ID_MAP[$routingId] ?? self::DEFAULT_CATEGORY_ID;
             $products = $this->storeApi->getProductsByCategoryId($categoryId);
+            Log::info('store_products_raw', [
+                'category' => $routingId,
+                'category_id' => $categoryId,
+                'products' => $products,
+            ]);
+            $normalizedProducts = $this->storeApi->normalizeProducts($products, 10);
+            Log::info('store_products_normalized', [
+                'category' => $routingId,
+                'category_id' => $categoryId,
+                'products' => $normalizedProducts,
+            ]);
             Log::info('store_products_loaded', [
                 'category' => $routingId,
                 'category_id' => $categoryId,
                 'products_count' => count($products),
             ]);
-            $message = $this->storeApi->formatProductsMessage($routingId, $products);
-            $this->menuService->sendTextMessage($phoneNumberId, $phoneNumber, $message);
+            $this->cacheProductsForPhone($phoneNumber, $normalizedProducts);
+            $this->menuService->sendProductListMenu($phoneNumberId, $phoneNumber, 'المنتجات المتوفرة', $normalizedProducts);
             Log::info('products_message_sent', [
                 'phone' => $phoneNumber,
                 'category' => $routingId,
             ]);
-            $this->menuService->sendTextMessage($phoneNumberId, $phoneNumber, 'يمكنك اختيار قسم آخر من القائمة 👇');
-            $this->menuService->sendMainMenu($phoneNumberId, $phoneNumber);
             return;
         }
 
@@ -139,6 +151,28 @@ class InteractiveRouter
             ]);
             $this->menuService->sendTextMessage($phoneNumberId, $phoneNumber, 'يمكنك اختيار قسم آخر من القائمة 👇');
             $this->menuService->sendMainMenu($phoneNumberId, $phoneNumber);
+            return;
+        }
+
+        if (str_starts_with($routingId, 'product:')) {
+            $productId = substr($routingId, strlen('product:'));
+            $product = $this->findCachedProduct($phoneNumber, $productId);
+            if ($product !== null) {
+                $this->setLastProductId($phoneNumber, $productId);
+                $this->menuService->sendProductDetailsWithBuyButton($phoneNumberId, $phoneNumber, $product);
+            }
+            return;
+        }
+
+        if (str_starts_with($routingId, 'buy:')) {
+            $productId = substr($routingId, strlen('buy:'));
+            $product = $this->findCachedProduct($phoneNumber, $productId);
+            $productName = $product['name'] ?? '';
+            $this->menuService->sendTextMessage(
+                $phoneNumberId,
+                $phoneNumber,
+                "تم استلام رغبتك بشراء المنتج: {$productName}\n\nلإكمال الطلب، يرجى إرسال البيانات التالية:\n\n1) الاسم الكامل\n2) رقم الهاتف\n3) المحافظة\n4) العنوان التفصيلي\n5) طريقة الدفع\n\nيمكنك إرسالها في رسالة واحدة بالترتيب."
+            );
             return;
         }
 
@@ -244,6 +278,24 @@ class InteractiveRouter
             return;
         }
 
+        if ($trimmedText === 'شراء المنتج') {
+            $productId = $this->getLastProductId($phoneNumber);
+            if ($productId !== null) {
+                $this->handleInteractiveReply($phoneNumberId, $phoneNumber, 'buy:' . $productId);
+                return;
+            }
+        }
+
+        $product = $this->findCachedProductByName($phoneNumber, $trimmedText);
+        if ($product !== null) {
+            $productId = (string) ($product['id'] ?? '');
+            if ($productId !== '') {
+                $this->setLastProductId($phoneNumber, $productId);
+            }
+            $this->menuService->sendProductDetailsWithBuyButton($phoneNumberId, $phoneNumber, $product);
+            return;
+        }
+
         $normalized = mb_strtolower(trim($text));
         $triggers = ['مرحبا', 'السلام', 'menu', 'start'];
 
@@ -254,5 +306,53 @@ class InteractiveRouter
 
         $this->menuService->sendTextMessage($phoneNumberId, $phoneNumber, 'يرجى اختيار أحد الخيارات من القائمة 👇');
         $this->menuService->sendMainMenu($phoneNumberId, $phoneNumber);
+    }
+
+    private function cacheProductsForPhone(string $phoneNumber, array $products): void
+    {
+        Cache::put($this->productCacheKey($phoneNumber), $products, self::PRODUCT_CACHE_TTL_SECONDS);
+    }
+
+    private function findCachedProduct(string $phoneNumber, string $productId): ?array
+    {
+        $products = Cache::get($this->productCacheKey($phoneNumber), []);
+        foreach ($products as $product) {
+            if ((string) ($product['id'] ?? '') === (string) $productId) {
+                return $product;
+            }
+        }
+        return null;
+    }
+
+    private function findCachedProductByName(string $phoneNumber, string $name): ?array
+    {
+        $products = Cache::get($this->productCacheKey($phoneNumber), []);
+        foreach ($products as $product) {
+            if (($product['name'] ?? '') === $name) {
+                return $product;
+            }
+        }
+        return null;
+    }
+
+    private function productCacheKey(string $phoneNumber): string
+    {
+        return 'products:phone:' . $phoneNumber;
+    }
+
+    private function lastProductCacheKey(string $phoneNumber): string
+    {
+        return 'last_product:phone:' . $phoneNumber;
+    }
+
+    private function setLastProductId(string $phoneNumber, string $productId): void
+    {
+        Cache::put($this->lastProductCacheKey($phoneNumber), $productId, self::LAST_PRODUCT_TTL_SECONDS);
+    }
+
+    private function getLastProductId(string $phoneNumber): ?string
+    {
+        $value = Cache::get($this->lastProductCacheKey($phoneNumber));
+        return $value !== null ? (string) $value : null;
     }
 }
