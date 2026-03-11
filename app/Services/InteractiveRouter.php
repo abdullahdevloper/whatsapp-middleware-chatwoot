@@ -16,6 +16,12 @@ class InteractiveRouter
         'أوقات الدوام' => 'help_hours',
         'التواصل مع خدمة العملاء' => 'help_contact',
     ];
+    private const SUPPORT_TEXT_TRIGGERS = [
+        'تواصل مع الدعم',
+        'التواصل مع الدعم',
+        'التواصل مع خدمة العملاء',
+        'خدمة العملاء',
+    ];
     private const PERFUME_MENU_TEXT_MAP = [
         'أحدث الإصدارات' => 'perfume_new',
         'الأكثر مبيعاً' => 'perfume_best',
@@ -100,6 +106,9 @@ class InteractiveRouter
     ];
     private const PRODUCT_CACHE_TTL_SECONDS = 1800;
     private const LAST_PRODUCT_TTL_SECONDS = 1800;
+    private const LAST_CATEGORY_MENU_TTL_SECONDS = 1800;
+    private const SUPPORT_HANDOFF_TTL_SECONDS = 86400;
+    private const SUPPORT_RESUME_KEYWORD = 'تشغيل';
 
     public function __construct(
         private readonly InteractiveMenuService $menuService,
@@ -108,8 +117,15 @@ class InteractiveRouter
     {
     }
 
-    public function handleInteractiveReply(string $phoneNumberId, string $phoneNumber, string $routingId): void
+    public function handleInteractiveReply(string $phoneNumberId, string $phoneNumber, ?int $inboxId, string $routingId): void
     {
+        if ($this->isSupportHandoffActive($phoneNumber)) {
+            Log::info('support_handoff_blocked', [
+                'phone' => $phoneNumber,
+                'routing_id' => $routingId,
+            ]);
+            return;
+        }
         Log::info('interactive_reply_received', [
             'phone' => $phoneNumber,
             'routing_id' => $routingId,
@@ -124,17 +140,18 @@ class InteractiveRouter
                 'products' => $products,
             ]);
             $normalizedProducts = $this->storeApi->normalizeProducts($products, 10);
-            Log::info('store_products_normalized', [
-                'category' => $routingId,
-                'category_id' => $categoryId,
-                'products' => $normalizedProducts,
-            ]);
+            // Log::info('store_products_normalized', [
+            //     'category' => $routingId,
+            //     'category_id' => $categoryId,
+            //     'products' => $normalizedProducts,
+            // ]);
             Log::info('store_products_loaded', [
                 'category' => $routingId,
                 'category_id' => $categoryId,
                 'products_count' => count($products),
             ]);
             $this->cacheProductsForPhone($phoneNumber, $normalizedProducts);
+            $this->setLastCategoryKey($phoneNumber, $routingId);
             $menuCopy = $this->productMenuCopy($routingId);
             $this->menuService->sendProductListMenu(
                 $phoneNumberId,
@@ -142,6 +159,7 @@ class InteractiveRouter
                 $menuCopy['title'],
                 $menuCopy['body'],
                 $menuCopy['section'],
+                $menuCopy['button'],
                 $normalizedProducts
             );
             Log::info('products_message_sent', [
@@ -152,6 +170,20 @@ class InteractiveRouter
         }
 
         if (array_key_exists($routingId, self::STATIC_MESSAGES)) {
+            if ($routingId === 'help_contact') {
+                $this->setSupportHandoff($phoneNumber);
+                $this->menuService->sendTextMessage(
+                    $phoneNumberId,
+                    $phoneNumber,
+                    'تم تحويلك لخدمة العملاء. تفضل أرسل استفسارك وسيتم الرد عليك قريباً.' . "\n\n" .
+                    'لإعادة تفعيل الرد التلقائي لاحقاً أرسل كلمة: ' . self::SUPPORT_RESUME_KEYWORD
+                );
+                $this->notifySupportTeam($phoneNumberId, $phoneNumber, $inboxId);
+                Log::info('support_handoff_started', [
+                    'phone' => $phoneNumber,
+                ]);
+                return;
+            }
             $this->menuService->sendTextMessage($phoneNumberId, $phoneNumber, self::STATIC_MESSAGES[$routingId]);
             Log::info('menu_section_sent', [
                 'section' => $routingId,
@@ -167,7 +199,13 @@ class InteractiveRouter
             $product = $this->findCachedProduct($phoneNumber, $productId);
             if ($product !== null) {
                 $this->setLastProductId($phoneNumber, $productId);
-                $this->menuService->sendProductDetailsWithBuyButton($phoneNumberId, $phoneNumber, $product);
+                $this->menuService->sendProductDetailsWithBuyButton(
+                    $phoneNumberId,
+                    $phoneNumber,
+                    $product,
+                    $this->getLastCategoryKey($phoneNumber),
+                    $this->getLastMenuLabel($phoneNumber)
+                );
             }
             return;
         }
@@ -181,6 +219,35 @@ class InteractiveRouter
                 $phoneNumber,
                 "تم استلام رغبتك بشراء المنتج: {$productName}\n\nلإكمال الطلب، يرجى إرسال البيانات التالية:\n\n1) الاسم الكامل\n2) رقم الهاتف\n3) المحافظة\n4) العنوان التفصيلي\n5) طريقة الدفع\n\nيمكنك إرسالها في رسالة واحدة بالترتيب."
             );
+            return;
+        }
+
+        if ($routingId === 'support_request') {
+            $this->setSupportHandoff($phoneNumber);
+            $this->menuService->sendTextMessage(
+                $phoneNumberId,
+                $phoneNumber,
+                'تم تحويلك لخدمة العملاء. تفضل أرسل استفسارك وسيتم الرد عليك قريباً.' . "\n\n" .
+                'لإعادة تفعيل الرد التلقائي لاحقاً أرسل كلمة: ' . self::SUPPORT_RESUME_KEYWORD
+            );
+            $this->notifySupportTeam($phoneNumberId, $phoneNumber, $inboxId);
+            Log::info('support_handoff_started', [
+                'phone' => $phoneNumber,
+            ]);
+            return;
+        }
+
+        if ($routingId === 'back_previous') {
+            $categoryKey = $this->getLastCategoryKey($phoneNumber);
+            if (is_string($categoryKey) && str_starts_with($categoryKey, 'perfume_')) {
+                $this->menuService->sendPerfumeMenu($phoneNumberId, $phoneNumber);
+                return;
+            }
+            if (is_string($categoryKey) && str_starts_with($categoryKey, 'bakhoor_')) {
+                $this->menuService->sendBakhoorMenu($phoneNumberId, $phoneNumber);
+                return;
+            }
+            $this->menuService->sendMainMenu($phoneNumberId, $phoneNumber);
             return;
         }
 
@@ -212,14 +279,32 @@ class InteractiveRouter
         }
     }
 
-    public function handleTextMessage(string $phoneNumberId, string $phoneNumber, string $text): void
+    public function handleTextMessage(string $phoneNumberId, string $phoneNumber, ?int $inboxId, string $text): void
     {
+        $trimmedText = trim($text);
+        if ($trimmedText === self::SUPPORT_RESUME_KEYWORD) {
+            $this->clearSupportHandoff($phoneNumber);
+            $this->menuService->sendTextMessage(
+                $phoneNumberId,
+                $phoneNumber,
+                'تم إعادة تفعيل الرد التلقائي. تفضل اختر ما يناسبك.'
+            );
+            $this->menuService->sendMainMenu($phoneNumberId, $phoneNumber);
+            return;
+        }
+
+        if ($this->isSupportHandoffActive($phoneNumber)) {
+            Log::info('support_handoff_blocked', [
+                'phone' => $phoneNumber,
+                'text' => $trimmedText,
+            ]);
+            return;
+        }
         Log::info('router_text_message', [
             'phone' => $phoneNumber,
-            'text' => $text,
+            'text' => $trimmedText,
         ]);
 
-        $trimmedText = trim($text);
         if (array_key_exists($trimmedText, self::MAIN_MENU_TEXT_MAP)) {
             $routingId = self::MAIN_MENU_TEXT_MAP[$trimmedText];
             Log::info('text_menu_mapping', [
@@ -227,7 +312,7 @@ class InteractiveRouter
                 'text' => $trimmedText,
                 'routing_id' => $routingId,
             ]);
-            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $routingId);
+            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, $routingId);
             return;
         }
 
@@ -238,7 +323,7 @@ class InteractiveRouter
                 'text' => $trimmedText,
                 'routing_id' => $routingId,
             ]);
-            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $routingId);
+            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, $routingId);
             return;
         }
 
@@ -249,7 +334,7 @@ class InteractiveRouter
                 'text' => $trimmedText,
                 'routing_id' => $routingId,
             ]);
-            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $routingId);
+            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, $routingId);
             return;
         }
 
@@ -260,7 +345,7 @@ class InteractiveRouter
                 'text' => $trimmedText,
                 'routing_id' => $routingId,
             ]);
-            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $routingId);
+            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, $routingId);
             return;
         }
 
@@ -271,7 +356,7 @@ class InteractiveRouter
                 'text' => $trimmedText,
                 'routing_id' => $routingId,
             ]);
-            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $routingId);
+            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, $routingId);
             return;
         }
 
@@ -282,14 +367,19 @@ class InteractiveRouter
                 'text' => $trimmedText,
                 'routing_id' => $routingId,
             ]);
-            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $routingId);
+            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, $routingId);
+            return;
+        }
+
+        if (in_array($trimmedText, self::SUPPORT_TEXT_TRIGGERS, true)) {
+            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, 'support_request');
             return;
         }
 
         if ($trimmedText === 'شراء المنتج') {
             $productId = $this->getLastProductId($phoneNumber);
             if ($productId !== null) {
-                $this->handleInteractiveReply($phoneNumberId, $phoneNumber, 'buy:' . $productId);
+                $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, 'buy:' . $productId);
                 return;
             }
         }
@@ -300,7 +390,13 @@ class InteractiveRouter
             if ($productId !== '') {
                 $this->setLastProductId($phoneNumber, $productId);
             }
-            $this->menuService->sendProductDetailsWithBuyButton($phoneNumberId, $phoneNumber, $product);
+            $this->menuService->sendProductDetailsWithBuyButton(
+                $phoneNumberId,
+                $phoneNumber,
+                $product,
+                $this->getLastCategoryKey($phoneNumber),
+                $this->getLastMenuLabel($phoneNumber)
+            );
             return;
         }
 
@@ -354,51 +450,61 @@ class InteractiveRouter
                 'title' => 'أحدث الإصدارات',
                 'body' => 'إصدارات جديدة بروائح مميزة، اختر المنتج الذي أعجبك',
                 'section' => 'المنتجات',
+                'button' => 'قائمة أحدث الإصدارات',
             ],
             'perfume_best' => [
                 'title' => 'الأكثر مبيعاً',
                 'body' => 'الأكثر طلباً من عملائنا، اختر المنتج المناسب لك',
                 'section' => 'المنتجات',
+                'button' => 'قائمة الأكثر مبيعاً',
             ],
             'perfume_all' => [
                 'title' => 'جميع العطور',
                 'body' => 'تصفّح كل العطور المتوفرة واختر ما يناسبك',
                 'section' => 'المنتجات',
+                'button' => 'قائمة جميع العطور',
             ],
             'perfume_men' => [
                 'title' => 'عطور رجالية',
                 'body' => 'اختيارات رجالية بروائح قوية وفاخرة',
                 'section' => 'المنتجات',
+                'button' => 'قائمة العطور الرجالية',
             ],
             'perfume_women' => [
                 'title' => 'عطور نسائية',
                 'body' => 'عطور نسائية بطابع أنيق وجذاب',
                 'section' => 'المنتجات',
+                'button' => 'قائمة العطور النسائية',
             ],
             'perfume_youth' => [
                 'title' => 'عطور شبابية',
                 'body' => 'روائح شبابية خفيفة ومنعشة',
                 'section' => 'المنتجات',
+                'button' => 'قائمة العطور الشبابية',
             ],
             'bakhoor_bakhoor' => [
                 'title' => 'البخور',
                 'body' => 'أفضل أنواع البخور المختارة',
                 'section' => 'المنتجات',
+                'button' => 'قائمة البخور',
             ],
             'bakhoor_touch' => [
                 'title' => 'اللمسات العطرية',
                 'body' => 'لمسات تضيف جمالاً لكل مناسبة',
                 'section' => 'المنتجات',
+                'button' => 'قائمة اللمسات العطرية',
             ],
             'bakhoor_makhmaria' => [
                 'title' => 'المخمريات',
                 'body' => 'مخمريات بروائح ثابتة ومميزة',
                 'section' => 'المنتجات',
+                'button' => 'قائمة المخمريات',
             ],
             default => [
                 'title' => 'المنتجات المتوفرة',
                 'body' => 'اختر المنتج المطلوب من القائمة',
                 'section' => 'المنتجات',
+                'button' => 'قائمة المنتجات',
             ],
         };
     }
@@ -406,6 +512,72 @@ class InteractiveRouter
     private function lastProductCacheKey(string $phoneNumber): string
     {
         return 'last_product:phone:' . $phoneNumber;
+    }
+
+    private function lastCategoryCacheKey(string $phoneNumber): string
+    {
+        return 'last_category:phone:' . $phoneNumber;
+    }
+
+    private function lastMenuLabelKey(string $phoneNumber): string
+    {
+        return 'last_menu_label:phone:' . $phoneNumber;
+    }
+
+    private function supportHandoffKey(string $phoneNumber): string
+    {
+        return 'support_handoff:phone:' . $phoneNumber;
+    }
+
+    private function setLastCategoryKey(string $phoneNumber, string $categoryKey): void
+    {
+        Cache::put($this->lastCategoryCacheKey($phoneNumber), $categoryKey, self::LAST_CATEGORY_MENU_TTL_SECONDS);
+        $menu = $this->productMenuCopy($categoryKey);
+        Cache::put($this->lastMenuLabelKey($phoneNumber), $menu['button'] ?? null, self::PRODUCT_CACHE_TTL_SECONDS);
+    }
+
+    private function setSupportHandoff(string $phoneNumber): void
+    {
+        Cache::put($this->supportHandoffKey($phoneNumber), true, self::SUPPORT_HANDOFF_TTL_SECONDS);
+    }
+
+    private function clearSupportHandoff(string $phoneNumber): void
+    {
+        Cache::forget($this->supportHandoffKey($phoneNumber));
+    }
+
+    private function isSupportHandoffActive(string $phoneNumber): bool
+    {
+        return (bool) Cache::get($this->supportHandoffKey($phoneNumber), false);
+    }
+
+    private function notifySupportTeam(string $phoneNumberId, string $customerPhone, ?int $inboxId): void
+    {
+        $supportPhone = (string) env('SUPPORT_TEAM_PHONE', '');
+        if ($supportPhone === '') {
+            return;
+        }
+
+        $inboxPhone = null;
+        if ($inboxId !== null) {
+            $inbox = \App\Models\ChatwootInbox::where('chatwoot_inbox_id', $inboxId)->first();
+            $inboxPhone = $inbox?->phone_number;
+        }
+        $sourcePhone = $inboxPhone ?? (string) $inboxId;
+        $message = "العميل {$customerPhone} طلب حدمة العملاء من الرقم {$sourcePhone} يرجى الرد عليه في اقرب وقت";
+        $this->menuService->sendTextMessage($phoneNumberId, $supportPhone, $message);
+    }
+
+    private function getLastCategoryKey(string $phoneNumber): ?string
+    {
+        $value = Cache::get($this->lastCategoryCacheKey($phoneNumber));
+        return $value !== null ? (string) $value : null;
+    }
+
+    private function getLastMenuLabel(string $phoneNumber): ?string
+    {
+        $value = Cache::get($this->lastMenuLabelKey($phoneNumber));
+        return $value !== null ? (string) $value : null;
     }
 
     private function setLastProductId(string $phoneNumber, string $productId): void

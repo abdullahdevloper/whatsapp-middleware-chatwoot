@@ -37,6 +37,7 @@ class InteractiveMenuService
         string $title,
         string $body,
         string $sectionTitle,
+        string $buttonText,
         array $products
     ): void {
         $rows = [];
@@ -57,12 +58,16 @@ class InteractiveMenuService
         }
 
         $rows = array_values(array_filter($rows, fn ($row) => !empty($row['title'])));
+        $rows[] = [
+            'id' => 'back_previous',
+            'title' => 'الرجوع للقائمة السابقة',
+        ];
 
         $payload = $this->buildMenuPayload(
             mb_substr($title, 0, 24),
             $body,
-            'عرض المنتجات',
-            $sectionTitle,
+            mb_substr($buttonText, 0, 20),
+            mb_substr($sectionTitle, 0, 24),
             $rows
         );
 
@@ -72,7 +77,9 @@ class InteractiveMenuService
     public function sendProductDetailsWithBuyButton(
         string $phoneNumberId,
         string $phoneNumber,
-        array $product
+        array $product,
+        ?string $categoryKey = null,
+        ?string $menuLabel = null
     ): void {
         $fallbackImageUrl = 'https://tybalatrak.com/public/haybat_al_salateen_bundle_offer.png';
         $name = $product['name'] ?? '';
@@ -92,21 +99,30 @@ class InteractiveMenuService
         }
 
         if ($description !== '') {
-            $formattedDescription = "📝 وصف المنتج\n\n" . $description;
+            $formattedDescription = $this->formatProductDescription($description);
             $this->sendTextMessage($phoneNumberId, $phoneNumber, $formattedDescription);
         }
 
+        $bodyText = $this->productActionBody($categoryKey);
+        $buttonTitle = $this->productBuyButtonTitle($name);
         $buttons = [
             [
                 'type' => 'reply',
                 'reply' => [
                     'id' => 'buy:' . ($product['id'] ?? ''),
-                    'title' => 'شراء المنتج',
+                    'title' => $buttonTitle,
+                ],
+            ],
+            [
+                'type' => 'reply',
+                'reply' => [
+                    'id' => 'support_request',
+                    'title' => 'تواصل مع الدعم',
                 ],
             ],
         ];
 
-        $this->whatsApp->sendInteractiveButtons($phoneNumberId, $phoneNumber, 'إذا ناسبك المنتج تقدر تطلبه مباشرة بالزر التالي', $buttons);
+        $this->whatsApp->sendInteractiveButtons($phoneNumberId, $phoneNumber, $bodyText, $buttons);
     }
 
     private function formatDescription(string $text): string
@@ -128,6 +144,53 @@ class InteractiveMenuService
 
         $result = trim($withBreaks ?? $collapsed);
         return $result;
+    }
+
+    private function formatProductDescription(string $description): string
+    {
+        $lines = array_filter(array_map('trim', preg_split('/\r\n|\r|\n/u', $description) ?: []));
+        $lines = array_values($lines);
+
+        $out = [];
+        $out[] = '📝 تفاصيل المنتج';
+
+        $maxLines = 9;
+        $count = 0;
+
+        foreach ($lines as $line) {
+            if ($count >= $maxLines) {
+                break;
+            }
+
+            if (mb_strlen($line) > 140) {
+                $line = mb_substr($line, 0, 137) . '...';
+            }
+
+            $out[] = '• ' . $line;
+            $count++;
+        }
+
+        return implode("\n", $out);
+    }
+
+    private function productActionBody(?string $categoryKey): string
+    {
+        return match ($categoryKey) {
+            'perfume_new', 'perfume_best', 'perfume_all', 'perfume_men', 'perfume_women', 'perfume_youth' => 'اطلب عطرك بثقة',
+            'bakhoor_bakhoor' => 'اطلب بخورك بثقة',
+            'bakhoor_touch' => 'اطلب لمستك بثقة',
+            'bakhoor_makhmaria' => 'اطلب مخمريتك بثقة',
+            default => 'اطلب المنتج بثقة',
+        };
+    }
+
+    private function productBuyButtonTitle(string $productName): string
+    {
+        $base = 'شراء ' . trim($productName);
+        if (mb_strlen($base) <= 20) {
+            return $base;
+        }
+        return mb_substr($base, 0, 19) . '…';
     }
 
     public function buildInteractiveListPayload(): array
@@ -192,7 +255,7 @@ class InteractiveMenuService
     {
         $payload = $this->buildMenuPayload(
             'عطور طيب الأتراك',
-            'اختر النوع المناسب لك، ونقترح لك الأفضل',
+            'اختر عطرك بثقة واترك الباقي علينا بفضل الله',
             'عرض العطور',
             'أنواع العطور',
             [

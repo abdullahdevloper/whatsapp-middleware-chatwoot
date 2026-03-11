@@ -110,12 +110,12 @@ class ChatwootWebhookController extends Controller
                 'routing_id' => $replyId,
                 'phone' => $phoneNumber,
             ]);
-            $this->interactiveRouter->handleInteractiveReply($phoneNumberId, $phoneNumber, $replyId);
+            $this->interactiveRouter->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, $replyId);
             return response()->json(['status' => 'interactive_handled'], 200);
         }
 
         if ($messageType === 'incoming' && !empty($phoneNumber)) {
-            $this->interactiveRouter->handleTextMessage($phoneNumberId, $phoneNumber, (string) $content);
+            $this->interactiveRouter->handleTextMessage($phoneNumberId, $phoneNumber, $inboxId, (string) $content);
             return response()->json(['status' => 'text_handled'], 200);
         }
 
