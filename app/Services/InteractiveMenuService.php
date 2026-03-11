@@ -110,6 +110,7 @@ class InteractiveMenuService
             ]);
             $caption = implode("\n\n", $captionLines);
             $this->whatsApp->sendImage($phoneNumberId, $phoneNumber, $imageUrl, $caption);
+            $this->sleepAfterImage();
         }
 
         $this->notifyImageConversionFailure($phoneNumberId, $rawImageUrl, $imageResult);
@@ -293,6 +294,16 @@ class InteractiveMenuService
             . "الرابط: {$rawImageUrl}";
 
         $this->whatsApp->sendText($phoneNumberId, $supportPhone, $message);
+    }
+
+    private function sleepAfterImage(): void
+    {
+        $delayMs = (int) env('IMAGE_SEND_DELAY_MS', 500);
+        if ($delayMs <= 0) {
+            return;
+        }
+
+        usleep($delayMs * 1000);
     }
 
     public function buildInteractiveListPayload(): array

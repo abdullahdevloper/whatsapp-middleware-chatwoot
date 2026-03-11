@@ -214,6 +214,10 @@ class InteractiveRouter
             $productId = substr($routingId, strlen('buy:'));
             $product = $this->findCachedProduct($phoneNumber, $productId);
             $productName = $product['name'] ?? '';
+            Log::info('buy_button_mapped', [
+                'phone' => $phoneNumber,
+                'product_id' => $productId,
+            ]);
             $this->menuService->sendTextMessage(
                 $phoneNumberId,
                 $phoneNumber,
@@ -387,6 +391,11 @@ class InteractiveRouter
                         $productId = (string) ($product['id'] ?? '');
                         if ($productId !== '') {
                             $this->setLastProductId($phoneNumber, $productId);
+                            Log::info('buy_fallback_used', [
+                                'phone' => $phoneNumber,
+                                'text' => $trimmedText,
+                                'product_id' => $productId,
+                            ]);
                             $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, 'buy:' . $productId);
                             return;
                         }
