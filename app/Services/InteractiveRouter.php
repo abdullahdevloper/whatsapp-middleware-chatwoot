@@ -135,7 +135,15 @@ class InteractiveRouter
                 'products_count' => count($products),
             ]);
             $this->cacheProductsForPhone($phoneNumber, $normalizedProducts);
-            $this->menuService->sendProductListMenu($phoneNumberId, $phoneNumber, 'المنتجات المتوفرة', $normalizedProducts);
+            $menuCopy = $this->productMenuCopy($routingId);
+            $this->menuService->sendProductListMenu(
+                $phoneNumberId,
+                $phoneNumber,
+                $menuCopy['title'],
+                $menuCopy['body'],
+                $menuCopy['section'],
+                $normalizedProducts
+            );
             Log::info('products_message_sent', [
                 'phone' => $phoneNumber,
                 'category' => $routingId,
@@ -304,7 +312,6 @@ class InteractiveRouter
             return;
         }
 
-        $this->menuService->sendTextMessage($phoneNumberId, $phoneNumber, 'يرجى اختيار أحد الخيارات من القائمة 👇');
         $this->menuService->sendMainMenu($phoneNumberId, $phoneNumber);
     }
 
@@ -338,6 +345,62 @@ class InteractiveRouter
     private function productCacheKey(string $phoneNumber): string
     {
         return 'products:phone:' . $phoneNumber;
+    }
+
+    private function productMenuCopy(string $routingId): array
+    {
+        return match ($routingId) {
+            'perfume_new' => [
+                'title' => 'أحدث الإصدارات',
+                'body' => 'إصدارات جديدة بروائح مميزة، اختر المنتج الذي أعجبك',
+                'section' => 'المنتجات',
+            ],
+            'perfume_best' => [
+                'title' => 'الأكثر مبيعاً',
+                'body' => 'الأكثر طلباً من عملائنا، اختر المنتج المناسب لك',
+                'section' => 'المنتجات',
+            ],
+            'perfume_all' => [
+                'title' => 'جميع العطور',
+                'body' => 'تصفّح كل العطور المتوفرة واختر ما يناسبك',
+                'section' => 'المنتجات',
+            ],
+            'perfume_men' => [
+                'title' => 'عطور رجالية',
+                'body' => 'اختيارات رجالية بروائح قوية وفاخرة',
+                'section' => 'المنتجات',
+            ],
+            'perfume_women' => [
+                'title' => 'عطور نسائية',
+                'body' => 'عطور نسائية بطابع أنيق وجذاب',
+                'section' => 'المنتجات',
+            ],
+            'perfume_youth' => [
+                'title' => 'عطور شبابية',
+                'body' => 'روائح شبابية خفيفة ومنعشة',
+                'section' => 'المنتجات',
+            ],
+            'bakhoor_bakhoor' => [
+                'title' => 'البخور',
+                'body' => 'أفضل أنواع البخور المختارة',
+                'section' => 'المنتجات',
+            ],
+            'bakhoor_touch' => [
+                'title' => 'اللمسات العطرية',
+                'body' => 'لمسات تضيف جمالاً لكل مناسبة',
+                'section' => 'المنتجات',
+            ],
+            'bakhoor_makhmaria' => [
+                'title' => 'المخمريات',
+                'body' => 'مخمريات بروائح ثابتة ومميزة',
+                'section' => 'المنتجات',
+            ],
+            default => [
+                'title' => 'المنتجات المتوفرة',
+                'body' => 'اختر المنتج المطلوب من القائمة',
+                'section' => 'المنتجات',
+            ],
+        };
     }
 
     private function lastProductCacheKey(string $phoneNumber): string

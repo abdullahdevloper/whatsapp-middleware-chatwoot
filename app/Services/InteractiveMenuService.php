@@ -35,6 +35,8 @@ class InteractiveMenuService
         string $phoneNumberId,
         string $phoneNumber,
         string $title,
+        string $body,
+        string $sectionTitle,
         array $products
     ): void {
         $rows = [];
@@ -58,9 +60,9 @@ class InteractiveMenuService
 
         $payload = $this->buildMenuPayload(
             mb_substr($title, 0, 24),
-            'اختر المنتج المطلوب',
+            $body,
             'عرض المنتجات',
-            'المنتجات',
+            $sectionTitle,
             $rows
         );
 
@@ -80,14 +82,18 @@ class InteractiveMenuService
         $imageUrl = $fallbackImageUrl;
 
         $priceLine = $price !== '' ? trim($price . ' ' . $currency) : null;
-        $bodyLines = array_filter([$name, $description, $priceLine]);
-        $details = implode("\n\n", $bodyLines);
         if (!empty($imageUrl)) {
-            $caption = $priceLine !== null ? $name . "\n" . $priceLine : $name;
+            $captionLines = array_filter([
+                $name,
+                $priceLine,
+            ]);
+            $caption = implode("\n\n", $captionLines);
             $this->whatsApp->sendImage($phoneNumberId, $phoneNumber, $imageUrl, $caption);
         }
-        if ($details !== '') {
-            $this->sendTextMessage($phoneNumberId, $phoneNumber, $details);
+
+        if ($description !== '') {
+            $formattedDescription = "📝 وصف المنتج\n\n" . $description;
+            $this->sendTextMessage($phoneNumberId, $phoneNumber, $formattedDescription);
         }
 
         $buttons = [
@@ -100,7 +106,7 @@ class InteractiveMenuService
             ],
         ];
 
-        $this->whatsApp->sendInteractiveButtons($phoneNumberId, $phoneNumber, 'هل ترغب في شراء هذا المنتج؟', $buttons);
+        $this->whatsApp->sendInteractiveButtons($phoneNumberId, $phoneNumber, 'إذا ناسبك المنتج تقدر تطلبه مباشرة بالزر التالي', $buttons);
     }
 
     private function formatDescription(string $text): string
@@ -116,7 +122,7 @@ class InteractiveMenuService
             return '';
         }
 
-        $withBreaks = preg_replace('/\s*([،؛:])\s*/u', "$1\n", $collapsed);
+        $withBreaks = preg_replace('/\s*([،؛:])\s*/u', "$1 ", $collapsed);
         $withBreaks = preg_replace('/\s*(\.)\s*/u', "$1\n", $withBreaks ?? $collapsed);
         $withBreaks = preg_replace('/\s*-\s*/u', "\n- ", $withBreaks ?? $collapsed);
 
@@ -127,7 +133,7 @@ class InteractiveMenuService
     public function buildInteractiveListPayload(): array
     {
         return [
-            'content' => 'اختر القسم الذي تريد تصفحه',
+            'content' => 'أهلاً بك، خلّنا نختار لك اللي يناسب ذوقك',
             'content_type' => 'text',
             'message_type' => 'outgoing',
             'private' => false,
@@ -135,16 +141,16 @@ class InteractiveMenuService
                 'type' => 'list',
                 'header' => [
                     'type' => 'text',
-                    'text' => 'متجر طيب الأتراك',
+                    'text' => 'طيّب الأتراك - مرحباً بك',
                 ],
                 'body' => [
-                    'text' => 'اختر القسم الذي تريد تصفحه',
+                    'text' => 'اختر القسم، ونساعدك توصل لأفضل الخيارات بسرعة',
                 ],
                 'action' => [
-                    'button' => 'عرض القائمة',
+                    'button' => 'عرض الأقسام',
                     'sections' => [
                         [
-                            'title' => 'الأقسام الرئيسية',
+                            'title' => 'الأقسام',
                             'rows' => [
                                 [
                                     'id' => 'menu_perfumes',
@@ -185,10 +191,10 @@ class InteractiveMenuService
     public function sendPerfumeMenu(string $phoneNumberId, string $phoneNumber): void
     {
         $payload = $this->buildMenuPayload(
-            'قائمة العطور',
-            'اختر القسم الذي تريد تصفحه',
-            'عرض القائمة',
-            'الأقسام',
+            'عطور طيب الأتراك',
+            'اختر النوع المناسب لك، ونقترح لك الأفضل',
+            'عرض العطور',
+            'أنواع العطور',
             [
                 ['id' => 'perfume_new', 'title' => 'أحدث الإصدارات'],
                 ['id' => 'perfume_best', 'title' => 'الأكثر مبيعاً'],
@@ -206,10 +212,10 @@ class InteractiveMenuService
     public function sendBakhoorMenu(string $phoneNumberId, string $phoneNumber): void
     {
         $payload = $this->buildMenuPayload(
-            'قائمة البخور واللمسات',
-            'اختر القسم الذي تريد تصفحه',
-            'عرض القائمة',
-            'الأقسام',
+            'البخور واللمسات',
+            'اختر ما يناسب ذوقك اليوم',
+            'عرض البخور',
+            'الخيارات',
             [
                 ['id' => 'bakhoor_bakhoor', 'title' => 'البخور'],
                 ['id' => 'bakhoor_makhmaria', 'title' => 'المخمريات'],
@@ -225,9 +231,9 @@ class InteractiveMenuService
     {
         $payload = $this->buildMenuPayload(
             'الشحن والسياسات',
-            'اختر القسم الذي تريد تصفحه',
-            'عرض القائمة',
-            'الأقسام',
+            'كل التفاصيل المهمة قبل الطلب',
+            'عرض التفاصيل',
+            'المعلومات',
             [
                 ['id' => 'shipping_yemen', 'title' => 'الشحن داخل اليمن'],
                 ['id' => 'shipping_gulf', 'title' => 'الشحن إلى دول الخليج'],
@@ -244,9 +250,9 @@ class InteractiveMenuService
     {
         $payload = $this->buildMenuPayload(
             'المساعدة',
-            'اختر القسم الذي تريد تصفحه',
-            'عرض القائمة',
-            'الأقسام',
+            'نرد على كل استفساراتك بسرعة',
+            'عرض المساعدة',
+            'المساعدة',
             [
                 ['id' => 'help_faq', 'title' => 'الأسئلة الشائعة'],
                 ['id' => 'help_payment', 'title' => 'طرق الدفع والتحويل'],
@@ -263,9 +269,9 @@ class InteractiveMenuService
     {
         $payload = $this->buildMenuPayload(
             'الطلب',
-            'اختر القسم الذي تريد تصفحه',
-            'عرض القائمة',
-            'الأقسام',
+            'ابدأ طلبك بسهولة من هنا',
+            'خيارات الطلب',
+            'خيارات الطلب',
             [
                 ['id' => 'order_form', 'title' => 'نموذج الطلب'],
                 ['id' => 'order_browse', 'title' => 'تصفح المنتجات والتسوق'],
