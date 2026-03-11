@@ -376,6 +376,25 @@ class InteractiveRouter
             return;
         }
 
+        $buyPrefixes = ['شراء ', 'طلب '];
+        foreach ($buyPrefixes as $prefix) {
+            if (str_starts_with($trimmedText, $prefix)) {
+                $candidate = trim(mb_substr($trimmedText, mb_strlen($prefix)));
+                $candidate = rtrim($candidate, "….");
+                if ($candidate !== '') {
+                    $product = $this->findCachedProductByNameOrPrefix($phoneNumber, $candidate);
+                    if ($product !== null) {
+                        $productId = (string) ($product['id'] ?? '');
+                        if ($productId !== '') {
+                            $this->setLastProductId($phoneNumber, $productId);
+                            $this->handleInteractiveReply($phoneNumberId, $phoneNumber, $inboxId, 'buy:' . $productId);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         if ($trimmedText === 'شراء المنتج') {
             $productId = $this->getLastProductId($phoneNumber);
             if ($productId !== null) {
@@ -431,7 +450,30 @@ class InteractiveRouter
     {
         $products = Cache::get($this->productCacheKey($phoneNumber), []);
         foreach ($products as $product) {
-            if (($product['name'] ?? '') === $name) {
+            $fullName = (string) ($product['name'] ?? '');
+            $displayTitle = (string) ($product['display_title'] ?? '');
+            if ($fullName === $name || $displayTitle === $name) {
+                return $product;
+            }
+        }
+        return null;
+    }
+
+    private function findCachedProductByNameOrPrefix(string $phoneNumber, string $name): ?array
+    {
+        $exact = $this->findCachedProductByName($phoneNumber, $name);
+        if ($exact !== null) {
+            return $exact;
+        }
+
+        $products = Cache::get($this->productCacheKey($phoneNumber), []);
+        foreach ($products as $product) {
+            $fullName = (string) ($product['name'] ?? '');
+            $displayTitle = (string) ($product['display_title'] ?? '');
+            if ($fullName !== '' && str_starts_with($fullName, $name)) {
+                return $product;
+            }
+            if ($displayTitle !== '' && str_starts_with($displayTitle, $name)) {
                 return $product;
             }
         }

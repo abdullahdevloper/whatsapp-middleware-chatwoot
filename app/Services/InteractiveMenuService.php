@@ -2,11 +2,15 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class InteractiveMenuService
 {
-    public function __construct(private readonly WhatsAppService $whatsApp)
+    public function __construct(
+        private readonly WhatsAppService $whatsApp,
+        private readonly ImageProxyService $imageProxy
+    )
     {
     }
 
@@ -58,6 +62,7 @@ class InteractiveMenuService
         }
 
         $rows = array_values(array_filter($rows, fn ($row) => !empty($row['title'])));
+        $rows = array_slice($rows, 0, 9);
         $rows[] = [
             'id' => 'back_previous',
             'title' => 'الرجوع للقائمة السابقة',
@@ -86,10 +91,19 @@ class InteractiveMenuService
         $description = $this->formatDescription($product['description'] ?? '');
         $price = $product['price'] ?? '';
         $currency = $product['currency'] ?? '';
-        $imageUrl = $fallbackImageUrl;
+        $rawImageUrl = $product['image_url'] ?? '';
+        $imageResult = $this->imageProxy->resolveImage($rawImageUrl, $fallbackImageUrl);
+        $imageUrl = $imageResult['url'];
 
         $priceLine = $price !== '' ? trim($price . ' ' . $currency) : null;
         if (!empty($imageUrl)) {
+            Log::info('whatsapp_image_final', [
+                'phone_number' => $phoneNumber,
+                'raw_image_url' => $rawImageUrl,
+                'image_url' => $imageUrl,
+                'status' => $imageResult['status'] ?? null,
+                'reason' => $imageResult['reason'] ?? null,
+            ]);
             $captionLines = array_filter([
                 $name,
                 $priceLine,
@@ -97,6 +111,8 @@ class InteractiveMenuService
             $caption = implode("\n\n", $captionLines);
             $this->whatsApp->sendImage($phoneNumberId, $phoneNumber, $imageUrl, $caption);
         }
+
+        $this->notifyImageConversionFailure($phoneNumberId, $rawImageUrl, $imageResult);
 
         if ($description !== '') {
             $formattedDescription = $this->formatProductDescription($description);
@@ -132,17 +148,38 @@ class InteractiveMenuService
         }
 
         $decoded = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $stripped = strip_tags($decoded);
-        $collapsed = preg_replace('/\s+/', ' ', $stripped);
-        if ($collapsed === null) {
+
+        $withBreaks = preg_replace('/<\s*br\s*\/?>/i', "\n", $decoded);
+        $withBreaks = preg_replace('/<\s*\/p\s*>\s*<\s*p\s*>/i', "\n\n", $withBreaks ?? $decoded);
+        $withBreaks = preg_replace('/<\s*p\s*>/i', '', $withBreaks ?? $decoded);
+        $withBreaks = preg_replace('/<\s*\/p\s*>/i', "\n", $withBreaks ?? $decoded);
+
+        $stripped = strip_tags($withBreaks ?? $decoded);
+        $stripped = preg_replace("/\\r\\n|\\r/u", "\n", $stripped ?? '');
+        $stripped = preg_replace("/[ \\t]+/u", ' ', $stripped ?? '');
+        $stripped = preg_replace("/\\n{3,}/u", "\n\n", $stripped ?? '');
+
+        if ($stripped === null) {
             return '';
         }
 
-        $withBreaks = preg_replace('/\s*([،؛:])\s*/u', "$1 ", $collapsed);
-        $withBreaks = preg_replace('/\s*(\.)\s*/u', "$1\n", $withBreaks ?? $collapsed);
-        $withBreaks = preg_replace('/\s*-\s*/u', "\n- ", $withBreaks ?? $collapsed);
+        $labels = [
+            'التصنيف:',
+            'الحجم:',
+            'الافتتاحية:',
+            'القلب:',
+            'القاعدة:',
+            'الفئة المستهدفة:',
+            'الاستخدام:',
+            'أفضل موسم:',
+            '🧭 الاستخدام والفئة:',
+            '🌿 التركيبة الهرمية:',
+        ];
+        $labelPattern = implode('|', array_map(fn ($label) => preg_quote($label, '/'), $labels));
+        $stripped = preg_replace("/(\\S)($labelPattern)/u", "$1\n$2", $stripped);
+        $stripped = preg_replace("/،(\\S)/u", "، $1", $stripped);
 
-        $result = trim($withBreaks ?? $collapsed);
+        $result = trim($stripped);
         return $result;
     }
 
@@ -154,23 +191,57 @@ class InteractiveMenuService
         $out = [];
         $out[] = '📝 تفاصيل المنتج';
 
-        $maxLines = 9;
-        $count = 0;
-
         foreach ($lines as $line) {
-            if ($count >= $maxLines) {
-                break;
+            if ($line === '') {
+                $out[] = '';
+                continue;
+            }
+            $wrapped = $this->wrapLinePreserveWords($line, 55);
+            if (empty($wrapped)) {
+                continue;
             }
 
-            if (mb_strlen($line) > 140) {
-                $line = mb_substr($line, 0, 137) . '...';
+            foreach ($wrapped as $index => $wrappedLine) {
+                $out[] = ($index === 0 ? '• ' : '  ') . $wrappedLine;
             }
-
-            $out[] = '• ' . $line;
-            $count++;
         }
 
         return implode("\n", $out);
+    }
+
+    private function wrapLinePreserveWords(string $text, int $maxChars): array
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return [];
+        }
+
+        $words = preg_split('/\s+/u', $text) ?: [];
+        $lines = [];
+        $current = '';
+
+        foreach ($words as $word) {
+            if ($word === '') {
+                continue;
+            }
+
+            $candidate = $current === '' ? $word : $current . ' ' . $word;
+            if (mb_strlen($candidate) <= $maxChars) {
+                $current = $candidate;
+                continue;
+            }
+
+            if ($current !== '') {
+                $lines[] = $current;
+            }
+            $current = $word;
+        }
+
+        if ($current !== '') {
+            $lines[] = $current;
+        }
+
+        return $lines;
     }
 
     private function productActionBody(?string $categoryKey): string
@@ -191,6 +262,37 @@ class InteractiveMenuService
             return $base;
         }
         return mb_substr($base, 0, 19) . '…';
+    }
+
+    private function notifyImageConversionFailure(string $phoneNumberId, string $rawImageUrl, array $imageResult): void
+    {
+        if (empty($rawImageUrl)) {
+            return;
+        }
+
+        $isWebp = (bool) ($imageResult['is_webp'] ?? false);
+        $status = (string) ($imageResult['status'] ?? '');
+        if (!$isWebp || $status === 'ok') {
+            return;
+        }
+
+        $supportPhone = (string) env('SUPPORT_TEAM_PHONE', '');
+        if ($supportPhone === '') {
+            return;
+        }
+
+        $hash = sha1($rawImageUrl);
+        $cacheKey = 'image_proxy_alert:' . $hash;
+        if (!Cache::add($cacheKey, true, 60 * 60 * 24)) {
+            return;
+        }
+
+        $reason = (string) ($imageResult['reason'] ?? 'unknown');
+        $message = "تنبيه: فشل تحويل صورة منتج من webp\n"
+            . "السبب: {$reason}\n"
+            . "الرابط: {$rawImageUrl}";
+
+        $this->whatsApp->sendText($phoneNumberId, $supportPhone, $message);
     }
 
     public function buildInteractiveListPayload(): array

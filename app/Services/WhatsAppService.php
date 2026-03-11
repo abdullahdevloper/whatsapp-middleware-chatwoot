@@ -148,10 +148,23 @@ class WhatsAppService
             ], fn ($v) => $v !== null && $v !== ''),
         ];
 
-        Http::withHeaders([
+        Log::info('whatsapp_image_request', [
+            'phone_number' => $phoneNumber,
+            'phone_number_id' => $phoneNumberId,
+            'image_url' => $imageUrl,
+        ]);
+
+        $response = Http::withHeaders([
             'Authorization' => "Bearer {$token}",
             'Content-Type' => 'application/json',
-        ])->post($url, $payload)->throw();
+        ])->post($url, $payload);
+
+        Log::info('whatsapp_image_response', [
+            'status' => $response->status(),
+            'body' => $response->json(),
+        ]);
+
+        $response->throw();
 
         Log::info('whatsapp_image_sent', [
             'phone_number' => $phoneNumber,

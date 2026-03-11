@@ -74,6 +74,7 @@ class StoreApiService
             $normalized[] = [
                 'id' => (string) $id,
                 'name' => (string) $name,
+                'display_title' => mb_substr((string) $name, 0, 24),
                 'price' => $product['price'] ?? null,
                 'currency' => $product['currency'] ?? null,
                 'description' => $this->cleanDescription($product['description'] ?? null),
