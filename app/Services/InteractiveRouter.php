@@ -222,6 +222,13 @@ class InteractiveRouter
                 'phone' => $phoneNumber,
                 'product_id' => $productId,
             ]);
+            if (isset(self::STATIC_MESSAGES['help_payment'])) {
+                $this->menuService->sendTextMessage(
+                    $phoneNumberId,
+                    $phoneNumber,
+                    self::STATIC_MESSAGES['help_payment']
+                );
+            }
             $this->menuService->sendTextMessage(
                 $phoneNumberId,
                 $phoneNumber,
