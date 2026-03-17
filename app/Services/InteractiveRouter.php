@@ -25,7 +25,8 @@ class InteractiveRouter
     private const PERFUME_MENU_TEXT_MAP = [
         'أحدث الإصدارات' => 'perfume_new',
         'الأكثر مبيعاً' => 'perfume_best',
-        'جميع العطور' => 'perfume_all',
+        'باقات العيد' => 'bundle_eid',
+        'الباقات والعروض' => 'bundle_offers',
         'عطور رجالية' => 'perfume_men',
         'عطور نسائية' => 'perfume_women',
         'عطور شبابية' => 'perfume_youth',
@@ -35,7 +36,6 @@ class InteractiveRouter
     private const PERFUME_PRODUCTS_TEXT = [
         'perfume_new' => "🆕 آخر الإصدارات\n\nعاصفة طيب الأتراك\nهيبة طيب الأتراك\nإحساس طيب الأتراك\nسفير عود طيب الأتراك\nملك طيب الأتراك\nسلطان طيب الأتراك\nملكة طيب الأتراك",
         'perfume_best' => "⭐ الأكثر مبيعاً\n\nعاصفة طيب الأتراك\nهيبة طيب الأتراك\nإحساس طيب الأتراك\nسفير عود طيب الأتراك\nملك طيب الأتراك\nسلطان طيب الأتراك\nملكة طيب الأتراك",
-        'perfume_all' => "🧴 جميع العطور\n\nعاصفة طيب الأتراك\nهيبة طيب الأتراك\nإحساس طيب الأتراك\nسفير عود طيب الأتراك\nملك طيب الأتراك\nسلطان طيب الأتراك\nملكة طيب الأتراك",
         'perfume_men' => "👔 عطور رجالية\n\nعاصفة طيب الأتراك\nهيبة طيب الأتراك\nإحساس طيب الأتراك\nسفير عود طيب الأتراك\nملك طيب الأتراك\nسلطان طيب الأتراك\nملكة طيب الأتراك",
         'perfume_women' => "👗 عطور نسائية\n\nعاصفة طيب الأتراك\nهيبة طيب الأتراك\nإحساس طيب الأتراك\nسفير عود طيب الأتراك\nملك طيب الأتراك\nسلطان طيب الأتراك\nملكة طيب الأتراك",
         'perfume_youth' => "🧑 عطور شبابية\n\nعاصفة طيب الأتراك\nهيبة طيب الأتراك\nإحساس طيب الأتراك\nسفير عود طيب الأتراك\nملك طيب الأتراك\nسلطان طيب الأتراك\nملكة طيب الأتراك",
@@ -73,16 +73,18 @@ class InteractiveRouter
     private const PRODUCT_CATEGORIES = [
         'perfume_best',
         'perfume_new',
-        'perfume_all',
         'perfume_men',
         'perfume_women',
         'perfume_youth',
         'bakhoor_bakhoor',
         'bakhoor_touch',
         'bakhoor_makhmaria',
+        'bundle_eid',
+        'bundle_offers',
     ];
     private const DEFAULT_CATEGORY_ID = 27;
     private const CATEGORY_ID_MAP = [
+        'perfume_best' => 290,
         'perfume_new' => 31,
         'perfume_men' => 32,
         'perfume_women' => 33,
@@ -90,6 +92,8 @@ class InteractiveRouter
         'bakhoor_bakhoor' => 25,
         'bakhoor_makhmaria' => 26,
         'bakhoor_touch' => 28,
+        'bundle_eid' => 210,
+        'bundle_offers' => 27,
     ];
 
     private const STATIC_MESSAGES = [
@@ -497,6 +501,18 @@ class InteractiveRouter
     private function productMenuCopy(string $routingId): array
     {
         return match ($routingId) {
+            'bundle_eid' => [
+                'title' => 'باقات العيد',
+                'body' => 'اختيارات مميزة للعيد، اختر الباقة المناسبة لك',
+                'section' => 'الباقات',
+                'button' => 'قائمة باقات العيد',
+            ],
+            'bundle_offers' => [
+                'title' => 'الباقات والعروض',
+                'body' => 'عروض وباقات مختارة بأسعار مميزة',
+                'section' => 'العروض',
+                'button' => 'قائمة الباقات والعروض',
+            ],
             'perfume_new' => [
                 'title' => 'أحدث الإصدارات',
                 'body' => 'إصدارات جديدة بروائح مميزة، اختر المنتج الذي أعجبك',
@@ -508,12 +524,6 @@ class InteractiveRouter
                 'body' => 'الأكثر طلباً من عملائنا، اختر المنتج المناسب لك',
                 'section' => 'المنتجات',
                 'button' => 'قائمة الأكثر مبيعاً',
-            ],
-            'perfume_all' => [
-                'title' => 'جميع العطور',
-                'body' => 'تصفّح كل العطور المتوفرة واختر ما يناسبك',
-                'section' => 'المنتجات',
-                'button' => 'قائمة جميع العطور',
             ],
             'perfume_men' => [
                 'title' => 'عطور رجالية',

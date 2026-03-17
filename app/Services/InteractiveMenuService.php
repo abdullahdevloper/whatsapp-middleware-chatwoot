@@ -51,9 +51,7 @@ class InteractiveMenuService
             if ($name === '') {
                 continue;
             }
-            $price = $product['price'] ?? null;
-            $currency = $product['currency'] ?? null;
-            $description = $price !== null ? trim($price . ' ' . $currency) : '';
+            $description = $this->formatPriceLine($product);
             $rows[] = [
                 'id' => 'product:' . $product['id'],
                 'title' => mb_substr($name, 0, 24),
@@ -89,13 +87,11 @@ class InteractiveMenuService
         $fallbackImageUrl = 'https://tybalatrak.com/public/haybat_al_salateen_bundle_offer.png';
         $name = $product['name'] ?? '';
         $description = $this->formatDescription($product['description'] ?? '');
-        $price = $product['price'] ?? '';
-        $currency = $product['currency'] ?? '';
+        $priceLine = $this->formatPriceLine($product);
         $rawImageUrl = $product['image_url'] ?? '';
         $imageResult = $this->imageProxy->resolveImage($rawImageUrl, $fallbackImageUrl);
         $imageUrl = $imageResult['url'];
 
-        $priceLine = $price !== '' ? trim($price . ' ' . $currency) : null;
         if (!empty($imageUrl)) {
             Log::info('whatsapp_image_final', [
                 'phone_number' => $phoneNumber,
@@ -106,7 +102,7 @@ class InteractiveMenuService
             ]);
             $captionLines = array_filter([
                 $name,
-                $priceLine,
+                $priceLine !== '' ? $priceLine : null,
             ]);
             $caption = implode("\n\n", $captionLines);
             $this->whatsApp->sendImage($phoneNumberId, $phoneNumber, $imageUrl, $caption);
@@ -265,6 +261,35 @@ class InteractiveMenuService
         return mb_substr($base, 0, 19) . '…';
     }
 
+    private function formatPriceLine(array $product): string
+    {
+        $currency = (string) ($product['currency'] ?? '');
+        $before = $product['price_before_discount'] ?? null;
+        $after = $product['price_after_discount'] ?? null;
+        $price = $product['price'] ?? null;
+
+        $beforeStr = $before !== null && $before !== '' ? trim($before . ' ' . $currency) : '';
+        $afterStr = $after !== null && $after !== '' ? trim($after . ' ' . $currency) : '';
+
+        if ($beforeStr !== '' && $afterStr !== '') {
+            if ($beforeStr === $afterStr) {
+                return $afterStr;
+            }
+            return "قبل الخصم: {$beforeStr}\nبعد الخصم: {$afterStr}";
+        }
+
+        if ($afterStr !== '') {
+            return $afterStr;
+        }
+
+        if ($beforeStr !== '') {
+            return $beforeStr;
+        }
+
+        $priceStr = $price !== null && $price !== '' ? trim($price . ' ' . $currency) : '';
+        return $priceStr;
+    }
+
     private function notifyImageConversionFailure(string $phoneNumberId, string $rawImageUrl, array $imageResult): void
     {
         if (empty($rawImageUrl)) {
@@ -374,7 +399,8 @@ class InteractiveMenuService
             [
                 ['id' => 'perfume_new', 'title' => 'أحدث الإصدارات'],
                 ['id' => 'perfume_best', 'title' => 'الأكثر مبيعاً'],
-                ['id' => 'perfume_all', 'title' => 'جميع العطور'],
+                ['id' => 'bundle_eid', 'title' => 'باقات العيد'],
+                ['id' => 'bundle_offers', 'title' => 'الباقات والعروض'],
                 ['id' => 'perfume_men', 'title' => 'عطور رجالية'],
                 ['id' => 'perfume_women', 'title' => 'عطور نسائية'],
                 ['id' => 'perfume_youth', 'title' => 'عطور شبابية'],

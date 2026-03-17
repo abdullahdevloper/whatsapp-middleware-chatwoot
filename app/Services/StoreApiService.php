@@ -58,6 +58,7 @@ class StoreApiService
 
         
         foreach ($products as $product) {
+            info('Processing product: ' . json_encode($product));
             if (count($normalized) >= $limit) {
                 break;
             }
@@ -76,6 +77,8 @@ class StoreApiService
                 'name' => (string) $name,
                 'display_title' => mb_substr((string) $name, 0, 24),
                 'price' => $product['price'] ?? null,
+                'price_before_discount' => $product['price_before_discount'] ?? null,
+                'price_after_discount' => $product['price_after_discount'] ?? null,
                 'currency' => $product['currency'] ?? null,
                 'description' => $this->cleanDescription($product['description'] ?? null),
                 'image_url' => $product['image_url'] ?? null,
