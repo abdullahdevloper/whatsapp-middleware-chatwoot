@@ -12,7 +12,6 @@ class InteractiveRouter
         'البخور واللمسات' => 'menu_bakhoor',
         'الشحن والسياسات' => 'menu_shipping',
         'الأسئلة الشائعة' => 'help_faq',
-        'طرق الدفع والتحويل' => 'help_payment',
         'أوقات الدوام' => 'help_hours',
         'التواصل مع خدمة العملاء' => 'help_contact',
     ];
@@ -25,7 +24,6 @@ class InteractiveRouter
     private const PERFUME_MENU_TEXT_MAP = [
         'أحدث الإصدارات' => 'perfume_new',
         'الأكثر مبيعاً' => 'perfume_best',
-        'باقات العيد' => 'bundle_eid',
         'الباقات والعروض' => 'bundle_offers',
         'عطور رجالية' => 'perfume_men',
         'عطور نسائية' => 'perfume_women',
@@ -58,7 +56,6 @@ class InteractiveRouter
 
     private const HELP_MENU_TEXT_MAP = [
         'الأسئلة الشائعة' => 'help_faq',
-        'طرق الدفع والتحويل' => 'help_payment',
         'أوقات الدوام' => 'help_hours',
         'التواصل مع خدمة العملاء' => 'help_contact',
         'الرجوع للقائمة الرئيسية' => 'back_main',
@@ -79,7 +76,6 @@ class InteractiveRouter
         'bakhoor_bakhoor',
         'bakhoor_touch',
         'bakhoor_makhmaria',
-        'bundle_eid',
         'bundle_offers',
     ];
     private const DEFAULT_CATEGORY_ID = 27;
@@ -92,7 +88,6 @@ class InteractiveRouter
         'bakhoor_bakhoor' => 25,
         'bakhoor_makhmaria' => 26,
         'bakhoor_touch' => 28,
-        'bundle_eid' => 210,
         'bundle_offers' => 27,
     ];
 
@@ -508,12 +503,6 @@ class InteractiveRouter
     private function productMenuCopy(string $routingId): array
     {
         return match ($routingId) {
-            'bundle_eid' => [
-                'title' => 'باقات العيد',
-                'body' => 'اختيارات مميزة للعيد، اختر الباقة المناسبة لك',
-                'section' => 'الباقات',
-                'button' => 'قائمة باقات العيد',
-            ],
             'bundle_offers' => [
                 'title' => 'الباقات والعروض',
                 'body' => 'عروض وباقات مختارة بأسعار مميزة',

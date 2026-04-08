@@ -370,10 +370,6 @@ class InteractiveMenuService
                                     'title' => 'الأسئلة الشائعة',
                                 ],
                                 [
-                                    'id' => 'help_payment',
-                                    'title' => 'طرق الدفع والتحويل',
-                                ],
-                                [
                                     'id' => 'help_hours',
                                     'title' => 'أوقات الدوام',
                                 ],
@@ -399,7 +395,6 @@ class InteractiveMenuService
             [
                 ['id' => 'perfume_new', 'title' => 'أحدث الإصدارات'],
                 ['id' => 'perfume_best', 'title' => 'الأكثر مبيعاً'],
-                ['id' => 'bundle_eid', 'title' => 'باقات العيد'],
                 ['id' => 'bundle_offers', 'title' => 'الباقات والعروض'],
                 ['id' => 'perfume_men', 'title' => 'عطور رجالية'],
                 ['id' => 'perfume_women', 'title' => 'عطور نسائية'],
